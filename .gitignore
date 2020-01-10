@@ -1,0 +1,4 @@
+scripts/xupdate.log
+*.class
+wollmux-config-*.tar.gz
+wollmux-config-*.7z

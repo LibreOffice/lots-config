@@ -1,0 +1,338 @@
+#!/bin/bash
+
+# Grafisch gefuehrtes Skript zum Updaten einer angepassten Standardkonfig mit den aktuellen
+# Dateien.
+
+#set -x
+
+error()
+{
+  echo "$@"
+  echo "Das Update wurde NICHT vollständig durchgeführt!"
+  exit 1
+}
+
+# Kopiert $1 nach $2/$1, wenn die Dateien nicht schon ohnehin identisch sind.
+# $1 darf keinen / enthalten, d.h. muss der Name einer Datei im CWD sein.
+copy()
+{
+  local f="$1"
+  local dir="$2"
+  
+  test -d "$f" && return  # Verzeichnisse nicht kopieren
+  
+  case "z$f" in
+    zwollmuxbar_*|zxupdate.log|zreferat_*) return 0;;
+  esac
+  
+  if [ -e "$dir/$f" ]; then
+    case "z$f" in
+      zmapReferent.conf|zformularmax4000.conf|zmapDienstgebaeude.conf|zmapOrgaKurz.conf|zreferat.conf|ztextbausteine.conf|ztastenkuerzel.conf|zmapOberOrga.conf|zadressauswahl-referat.conf|zformularanpassung.conf) return 0;;
+    esac
+  
+    if [ z"$(file --brief "$f")" = z"$(file --brief "$dir/$f")" ]; then
+      test -L "$f" && return 0
+      test -f "$f" || error "Kann mit Datei $f nicht umgehen!"
+      cmp -s "$f" "$dir/$f" && return 0
+    fi
+  fi
+  echo "Kopiere $f nach $dir"
+  cp -d --parents --remove-destination -- "$f" "$dir/" || error 
+}
+
+perform_update()
+{
+  local src="$1"
+  cd "$src" || error
+  src="$(pwd)"
+  cd "$src" || error
+  test -d conf || error "Verzeichnis $src enthält kein Unterverzeichnis conf/"
+  test -d vorlagen || error "Verzeichnis $src enthält kein Unterverzeichnis vorlagen/"
+  
+  local dir="$(zenity --title="Verzeichnis wählen, das geupdatet werden soll" --width=40 --height=100 --file-selection --filename="$HOME" --directory)"
+  test -z "$dir" && error "Kein Verzeichnis ausgewählt"
+  cd "$dir" || error "Update abgebrochen"
+  test -d conf || error "Verzeichnis $dir enthält kein Unterverzeichnis conf/"
+  test -d vorlagen || error "Verzeichnis $dir enthält kein Unterverzeichnis vorlagen/"
+  case "_$dir" in
+    */Netzlaufwerke/*) error "Verzeichnis darf nicht auf einem CIFS-Netzlaufwerk liegen" ;;
+  esac
+  
+  test "$src" -ef "$dir" && error "Quell- und Zielverzeichnis müssen verschieden sein!"
+  
+  local warnung="Wollen Sie wirklich Dateien in
+  
+  $dir
+  
+  ÜBERSCHREIBEN mit Dateien aus
+  
+  $src
+  
+  ?????????????????"
+  zenity --title="WIRKLICH ÜBERSCHREIBEN?" --width=0 --height=0 --question --text="$warnung" --no-wrap || error "Abbruch durch Benutzer!"
+  
+  local preOrgaEMailVersion=0
+  test ! -e "$dir/vorlagen/fragmente/OrgaEMail.ott" && preOrgaEMailVersion=1
+  
+  local preHauptabteilungIntern=0
+  test ! -e "$dir/vorlagen/fragmente/Hauptabteilung intern.ott" && preHauptabteilungIntern=1
+  
+  local preFusszeile_Rahmen=0
+  test ! -e "$dir/vorlagen/fragmente/Fusszeile_Rahmen.ott" && preFusszeile_Rahmen=1
+  
+  local preOrgaEmail=0
+  test ! -e "$dir/vorlagen/fragmente/Briefkopf-extern-OrgaEmail.ott" && preOrgaEmail=1
+
+  local preFusszeile_Dateiname=0
+  test ! -e "$dir/vorlagen/fragmente/Fusszeile_Dateiname.ott" && preFusszeile_Dateiname=1
+
+  local preAngaben_Referent=0
+  test ! -e "$dir/vorlagen/fragmente/Angaben_Referent.ott" && preAngaben_Referent=1
+
+  local preFusszeile_Referent=0
+  test ! -e "$dir/vorlagen/fragmente/Fusszeile_Referent.ott" && preFusszeile_Referent=1
+
+  local preAngaben_Referent_intern=0
+  test ! -e "$dir/vorlagen/fragmente/Angaben_Referent_intern.ott" && preAngaben_Referent_intern=1
+
+  local preFaxFormular=0
+  test ! -e "$dir/vorlagen/fragmente/FaxFormular.ott" && preFaxFormular=1
+
+  local preAngaben_intern_anonym=0
+  test ! -e "$dir/vorlagen/fragmente/Angaben_intern_anonym.ott" && preAngaben_intern_anonym=1  
+ 
+  local preUnterschrift=0
+  test ! -e "$dir/vorlagen/fragmente/Unterschrift.ott" && preUnterschrift=1    
+
+  local preMultiForm=0
+  test -d "$dir/vorlagen/standard/2.Formulare/50.Abtretungserklärung/X.Mehrere Ausfüllen.multi" && preMultiForm=1
+    
+  if [ -d "$dir/scripts" ]; then
+    cd "$src/scripts" || error
+    for f in * ; do
+      case "z$f" in
+        z*~) ;;
+        z*) 
+          copy "$f" "$dir/scripts" || error
+          ;;
+      esac
+    done
+  fi
+  
+  for package in de/muenchen/allg/d101 de/muenchen/allg/itd51/wollmux/func ; do
+    cd "$src/plugins/$package" || error
+    mkdir -p "$dir/plugins/$package"
+    for f in * ; do
+      case "z$f" in
+        z*~) ;;
+        z*) 
+          copy "$f" "$dir/plugins/$package" || error
+          ;;
+      esac
+    done
+  done
+  
+  cd "$src/conf" || error
+  for f in * ; do
+    case "z$f" in
+      z*~) ;;
+      z*) 
+        copy "$f" "$dir/conf" || error
+        ;;
+    esac
+  done
+  
+  cd "$src/vorlagen/fragmente" || error
+  for f in * ; do
+    case "z$f" in
+      z*~) ;;
+      z*) 
+        copy "$f" "$dir/vorlagen/fragmente" || error 
+        ;;
+    esac
+  done
+
+  # Button-Attribute der Standardvorlagen kopieren
+  cd "$src" || error
+  find vorlagen/standard/* -name '*.button' | while read f; do
+    case "z$f" in
+      z*~) ;;
+      z*)
+        copy "$f" "$dir" || error
+        ;;
+    esac
+  done
+
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # getrennter Absenderangaben für die einzelnen Briefköpfe.
+   # Wir erkennen diese daran, dass dort das Fragment OrgaEMail.ott noch nicht
+   # vorhanden ist.
+  if [ "$preOrgaEMailVersion" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in Email_kurzm.ott Email_fax.ott Adresse_Angaben_kurzm.ott \
+               Adresse_Angaben_Fax.ott Email_intern.ott ; do
+      
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+  
+   # Spezialfall für Update von Versionen der Standardkonfig, die noch keinen
+   # Link für das OrgaEMail-Fragment in ihrem X.insertFrag Verzeichnis haben.
+  if [ "$preOrgaEmail" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in OrgaEMail.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+  
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # des Fragments Hauptabteilung intern.
+   # Wir erkennen diese daran, dass dort das Fragment Hauptabteilung intern.ott noch nicht
+   # vorhanden ist.
+  if [ "$preHauptabteilungIntern" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in Hauptabteilung_intern.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+  
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # des Fragments Fusszeile_Rahmen.
+  if [ "$preFusszeile_Rahmen" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in Fusszeile_Rahmen.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # des Fragments Fusszeile_Dateiname.
+  if [ "$preFusszeile_Dateiname" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in Fusszeile_Dateiname.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # des Fragments Angaben_Referent.
+  if [ "$preAngaben_Referent" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in Angaben_Referent.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # des Fragments Fusszeile_Referent.
+  if [ "$preFusszeile_Referent" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in Fusszeile_Referent.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # des Fragments Angaben_Referent_intern.
+  if [ "$preAngaben_Referent_intern" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in Angaben_Referent_intern.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # des Fragments FaxFormular.
+  if [ "$preFaxFormular" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in FaxFormular.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi  
+ 
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # des Fragments Angaben_intern_anonym.
+  if [ "$preAngaben_intern_anonym" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in Angaben_intern_anonym.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+  
+   # Spezialfall für Update von Versionen der Standardkonfig vor der Einführung
+   # des Fragments Unterschrift.
+  if [ "$preUnterschrift" = 1  ]; then
+    for d in $dir/vorlagen/* ; do
+      test "$d" = "fragmente" && continue
+      test ! -d "$d/X.insertFrag" && continue
+      cd "$src/vorlagen/standard/X.insertFrag" || error
+      for f in Unterschrift.ott ; do
+        copy "$f" "$d/X.insertFrag" || error
+      done
+    done
+  fi
+
+  # Spezialfall für Update von Versionen der Standardkonfig vor Abkündigung von
+  # Mutli-Form Formularen
+  if [ "$preMultiForm" = 1 ]; then
+    rm -rf "$dir/vorlagen/standard/2.Formulare/50.Abtretungserklärung/X.Mehrere Ausfüllen.multi"
+    if [ -e "$dir/vorlagen/standard/2.Formulare/50.Abtretungserklärung/W.seppl.separator" ]; then
+      rm -rf "$dir/vorlagen/standard/2.Formulare/50.Abtretungserklärung/W.seppl.separator"
+    fi
+  fi
+  
+   # Spezialfall: 00README.CONF wird nicht mehr verwendet. Diese Datei löschen, falls vorhanden
+  rm -f "$dir/conf/00README.CONF"
+   # Die ümläütë tëst.conf enthält jetzt ein Leerzeichen. Alte Version ohne Leerzeichen löschen.
+  rm -f "$dir/conf/ümläütëtëst.conf"
+}
+
+scripts="${0%/*}"
+result=$(perform_update "${scripts}/..")
+exitState=$?
+echo "$result" >"$scripts/xupdate.log"
+test $exitState -eq 0 && test -n "$result" && result="Vergessen Sie nicht, run_automux auszuführen!!!
+
+$result" 
+test -z "$result" && result="Keine Dateien geupdatet!"
+zenity --title="xupdate: Ergebnis" --width=0 --height=0 --info --text="$result" --no-wrap

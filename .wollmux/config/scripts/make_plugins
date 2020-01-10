@@ -1,0 +1,48 @@
+#!/bin/bash
+# Dieses Skript baut die .class-Dateien zu den in plugins abgelegten .java-Dateien
+
+scripts="${0%/*}"
+plugins="${scripts}/../plugins"
+
+for ooo in /opt/libreoffice* /opt/openoffice*; do
+  echo "searching for juh.jar, jurt.jar, ridl.jar and unoil.jar in $ooo"
+  juh=$(find $ooo -name "juh.jar" 2>/dev/null)
+  jurt=$(find $ooo -name "jurt.jar" 2>/dev/null)
+  ridl=$(find $ooo -name "ridl.jar" 2>/dev/null)
+  unoil=$(find $ooo -name "unoil.jar" 2>/dev/null)
+  [ "x$juh" == "x" ] || [ "x$jurt" == "x" ] || [ "x$ridl" == "x" ] || [ "x$unoil" == "x" ] || break;
+done
+
+if [ "x$juh" == "x" ] || [ "x$jurt" == "x" ] || [ "x$ridl" == "x" ] || [ "x$unoil" == "x" ]
+then
+  echo "Could not find juh.jar, jurt.jar, ridl.jar or unoil.jar on your system."
+  echo "They are all required for building some of the plugins."
+  echo "Please ensure that there is an OpenOffice/LibreOffice installation available"
+  echo "in /opt/libreoffice* or /opt/openoffice*."
+  exit 1;
+fi
+
+OOOJARS="$juh:$jurt:$ridl:$unoil"
+
+export CLASSPATH="$plugins:$OOOJARS"
+
+if [ ! -x "${JAVA_HOME}/bin/javac" ]
+then
+  echo "Please set JAVA_HOME to a jdk that is able to build for target 11"
+  echo "This could be done e.g. like this:"
+  echo "  sudo apt-get install openjdk-11-jdk"
+  echo "  export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64/"
+  exit 1;
+fi
+
+for classFile in $(find $plugins -name "*.class")
+do
+  rm $classFile
+done
+
+for javaFile in $(find $plugins -name "*.java")
+do
+  echo ""
+  echo "javac $javaFile"
+  $JAVA_HOME/bin/javac -encoding UTF-8 -source 1.8 -target 1.8 $javaFile
+done

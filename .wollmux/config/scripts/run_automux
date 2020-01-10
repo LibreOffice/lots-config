@@ -1,0 +1,7 @@
+#!/bin/sh
+zenity --title="automux..." --width=0 --height=0 --info --text="Bitte warten..." --no-wrap &
+waitboxpid=$!
+scripts="${0%/*}"
+result=$("${scripts}/automux" --all "${scripts}/.." 2>&1)
+kill $waitboxpid
+zenity --title="automux" --width=0 --height=0 --info --text="$result" --no-wrap

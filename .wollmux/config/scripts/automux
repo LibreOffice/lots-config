@@ -1,0 +1,499 @@
+#!/bin/bash
+
+error()
+{
+  echo 1>&2 "$@"
+  exit 1
+}
+
+warning()
+{
+  echo 1>&2 "Warnung: $@"
+}
+
+usage='USAGE: automux --all|--fixlinks|--wollmuxbar <verzeichnis>
+<verzeichnis> muss die Unterverzeichnisse conf/ und vorlagen/ enthalten.
+--fixlinks: berichtigt absolute Symlinks
+--wollmuxbar: erstellt wollmuxbar_<gruppe>.conf Dateien
+--all: macht sowohl --fixlinks als auch --wollmuxbar
+'
+
+if [ $# != 2 ]; then
+  error "$usage"
+fi
+
+if [ -z "$HKCHAR"]; then
+  HKCHAR="~"
+fi
+
+cmd="$1"
+readlink -f "$2" >/dev/null || error "Fehlerhaftes Startverzeichnis '$2'"
+startdir="$(readlink -f $2)"
+
+cd "$startdir" || error "Fehler beim Wechseln in Verzeichnis '$startdir'"
+
+test -d conf || error "Verzeichnis $startdir enthält kein Unterverzeichnis conf/"
+test -d vorlagen || error "Verzeichnis $startdir enthält kein Unterverzeichnis vorlagen/"
+
+# Nimmt einen Pfad eines Dateisystemobjekts, das existieren muss, und gibt dazu eine ID aus,
+# die denn WollMux-Regeln für einen Schlüssel entspricht. Die ID ist nur abhängig von der Datei
+# selbst, nicht vom Pfad über den darauf zugegriffen wird, d.h. wird diese Funktion einmal für
+# ./foo und einmal für /voller/pfad/foo aufgerufen, so entsteht die selbe ID, wenn es sich um
+# das selbe Dateisystemobjekt handelt.
+# Die ID wird aus dem kanonischen Pfad abzüglich $startdir/vorlagen gebildet.
+#  $1: Dateisystemobjekt, das existieren muss.
+make_id()
+{
+  local id="$(readlink -f "$1")"
+  id=${id#$startdir/vorlagen}
+  test -z "$id" && error 'Unerwarteter Fehler in make_id => Bitte melden!'
+  echo -n "am_${id}" | tr -c 'a-zA-Z0-9_' '_'
+}
+
+# Aufrufparameter:
+#   $1: Pfad unter dem die Datei zu finden ist
+#   $2(optional): FRAG_ID
+outputfrag()
+{
+  local relpath="$1"
+  local id="$2"
+  test -z "$id" && id="$(make_id "$relpath")"
+  echo "  (FRAG_ID \"${id}\" URL \"${urlprefix}/${relpath}\")"
+}
+
+ # Textfragmente produzieren fuer alle Dateien mit erlaubter Erweiterung im Verzeichnis und allen
+ # Unter-, Unterunter-,... verzeichnissen.
+outputallfrags()
+{
+  local relpath
+  local id
+  echo "Textfragmente("
+
+  find . -follow \( -path "*/.*" -prune \) -o \( -type f -print \) |
+  (
+    while read -r relpath; do
+      case "z$relpath" in
+        z*.odt|z*.ott|z*.doc|z*.dot|z*.xls|z*.ods|z*.ppt|z*.pot|z*.otp|z*.odp|z*.ots|z*.xlt|z*.odg|z*.otg|z*.odf|z*.odb|z*.odm) 
+                case "z$relpath" in
+                  */?.insertFrag/*) 
+                      id="${relpath##*/}"
+                      id="${id%.*}"
+                      outputfrag "$relpath" "$id"
+                      ;;
+                  z*) outputfrag "$relpath"
+                      ;;
+                esac      
+                ;;
+        z*)     ;;
+      esac
+    done 
+  ) | sort -t '"' --key=2,2 -u # doppelte FRAG_IDs entfernen
+
+  echo ") # Textfragmente"
+  echo
+}
+
+remove_sort_prefix()
+{
+  echo -n "$1" | sed 's/^\(\([a-zA-Z]\)\|\([0-9]\+\)\)\.//'
+}
+
+make_hotkey()
+{
+  if [ $(echo $1 | grep -c "$HKCHAR\w") -ne 0 ]; then
+    # Sucht nach einem speziellen Marker innerhalb der Zeichkette und gibt
+    # das Zeichen das darauf folgt als Hotkey zurück.
+  	echo -n "${1}" | grep -o "$HKCHAR\w" | tr -d "\n" | tail -c 1 | tr '[:lower:]' '[:upper:]'
+  else
+    # Das Statement echo -n "." dient dazu, sicherzustellen, dass auch dann
+    # ein Zeichen zurückgeliefert wird, wenn der Quellstring keinen verwertbaren
+    # Hotkey enthält. Ein Großbuchstabe sollte hier nicht gewählt werden, weil
+    # make_label sonst das erste vorkommen dieses Großbuchstabens klein machen würde.
+    # Der Punkt an dieser Stelle ist okay, weil der zurückgelieferte String von
+    # make_label nochmal gefiltert wird, so dass der Punkt nicht in irgendwelchen
+    # regulären Ausdrücken landet.
+    echo -n "${1}" | { tr -dc 'A-Z' ; echo -n "." ;} | head -c 1
+  fi
+}
+
+make_label()
+{
+  local label=""
+  
+  if [ $(echo $1 | grep -c "$HKCHAR\w") -ne 0 ]; then
+    # Entfernt den Hotkeymarker
+  	label="$(echo "$1" | sed "s/$HKCHAR\(\\w\)/\1/g")"
+  	echo -n "$label"
+  else
+    # tr -dc A-Z um zu verhindern, dass böse Zeichen in das sed s-Statement kommen
+    local firstchar_upcase="$(echo "${1%%${1#?}}"|tr a-z A-Z)"
+    local hotkey_upcase="$(make_hotkey "$1"|tr -dc A-Z)"
+    local hotkey_locase="$(echo -n "${hotkey_upcase}" | tr A-Z a-z)"
+    label="$1"
+    test -z "$hotkey_upcase" || label="$(echo "$label" | sed "s/${hotkey_upcase}/${hotkey_locase}/")"
+    echo -n "${firstchar_upcase}${label#?}"
+  fi
+}
+
+# Gibt für jede Datei aus dem Verzeichnis $1 das Label des dazugehörigen Menüeintrags aus, jedoch nur,
+# wenn zu diesem Menüeintrag auch output_fragment_lists() eine Liste ausgeben würde.
+# Die Labels sind alle in Anführungszeichen eingeschlossen.
+# Aufrufparameter:
+#   $1: Pfad unter dem das Verzeichnis geöffnet werden kann
+output_label_list()
+{
+  local menuentry
+  local dir="$1"
+  cd "$dir" || error "Fehler beim Wechseln nach Verzeichnis $dir"
+  for f in * ; do
+    if test -f "$f" ; then
+      menuentry="$(outputmenuentry_file "$f" "$f")"
+      if [ "$menuentry" != "${menuentry#*FRAG_ID \"}" ] ; then # FRAG_ID, *nicht* LABEL ist RICHTIG hier!! Der Sinn des Tests ist es, nur dann ein LABEL auszugeben, wenn output_fragment_lists auch eine Liste ausgeben würde.
+        menuentry="${menuentry#*LABEL \"}"  #ACHTUNG! " muss mit gelöscht werden damit folgender Suffix-Cut nicht alles löscht.
+        echo '"'"${menuentry%%\"*}"'" '
+      fi
+    fi
+  done
+}
+
+# Gibt für jede Datei aus dem Verzeichnis $1 die von Klammern umschlossene Liste der FRAG_IDs aus
+# (mit vorangestelltem "FRAG_ID_LIST"),
+# die zu dem dazugehörigen Menüeintrag gehören. Das sind die Haupt-FRAG_ID, sowie evtl. vorhandene
+# FRAG_IDs für insertContent.
+# Aufrufparameter:
+#   $1: Pfad unter dem das Verzeichnis geöffnet werden kann
+output_fragment_lists()
+{
+  local menuentry
+  local fragid
+  local fragidlist
+  local dir="$1"
+  cd "$dir" || error "Fehler beim Wechseln nach Verzeichnis $dir"
+  for f in * ; do
+    if test -f "$f" ; then
+      menuentry="$(outputmenuentry_file "$f" "$f")"
+      while [ "$menuentry" != "${menuentry#*FRAG_ID \"}" ] ; do
+        menuentry="${menuentry#*FRAG_ID \"}"  #ACHTUNG! " muss mit gelöscht werden damit folgender Suffix-Cut nicht alles löscht.
+        fragid='"'"${menuentry%%\"*}"'"'
+        fragidlist="${fragidlist} ${fragid}"
+      done
+      test -n "$fragidlist" && echo "FRAG_ID_LIST ($fragidlist)"
+      fragidlist=""
+    fi
+  done
+}
+
+# Gibt einen Menüeintrag aus für ein Verzeichnis, das Vorlagen enthält, die gemeinsam geöffnet
+# und mit einer einzigen FormGUI ausgefüllt werden sollen (Multi-Form).
+# Aufrufparameter:
+#   $1: Nicht verwendet.
+#   $2: Pfad unter dem das Verzeichnis geöffnet werden kann
+outputmenuentry_multi()
+{
+  local dir="$2"
+  warning "Multi-Formulare werden nicht mehr unterstützt. Bitte entfernen Sie $dir aus der Konfiguration"
+}
+
+# Gibt einen Menüeintrag aus für ein Verzeichnis.
+# Aufrufparameter:
+#   $1: Nicht verwendet.
+#   $2: Pfad unter dem das Verzeichnis geöffnet werden kann
+#       Ist $2 gleich ?.insertFrag oder ?.buttons wird nichts getan.
+outputmenuentry_dir()
+{
+  local dir="$2"
+  
+  case "$dir" in
+    ?.insertFrag) return 0;;
+    ?.buttons) return 0;;
+  esac
+
+  local name="$(remove_sort_prefix "$dir")"
+  name="${name%.*}"
+  local hotkey="$(make_hotkey "$name")"
+  local label="$(make_label "$name")"
+  local id="$(make_id "$dir")"  
+  
+  echo "      (LABEL \"$label\" TYPE \"menu\" MENU \"$id\" HOTKEY \"$hotkey\")"
+}
+
+# Gibt einen Menüeintrag aus für eine Datei.
+# Aufrufparameter:
+#   $1: Nicht verwendet.
+#   $2: Pfad mit dem die Datei geöffnet werden kann
+outputmenuentry_file()
+{
+  local file="$2"
+  
+  local name="$(remove_sort_prefix "$file")"
+  name="${name%.*}"
+  local hotkey="$(make_hotkey "$name")"
+  local label="$(make_label "$name")"
+  local id="$(make_id "$file")"
+  local type
+  local ext
+  local relurl
+  
+  case "z$file" in
+    z*.ott|z*.dot|z*.pot|z*.otp|z*.ots|z*.xlt|z*.otg)
+            echo "      (LABEL \"$label\" FRAG_ID \"$id\" HOTKEY \"$hotkey\" ACTION \"openTemplate\" TYPE \"button\" )"
+            ;;
+    z*.odt|z*.doc|z*.xls|z*.ods|z*.ppt|z*.odp|z*.odg|z*.odb|z*.odf|z*.odm) 
+            echo "      (LABEL \"$label\" FRAG_ID \"$id\" HOTKEY \"$hotkey\" ACTION \"openDocument\" TYPE \"button\" )"
+            ;;
+    z*.button|z*.senderbox|z*.separator|z*.glue|z*.searchbox) 
+            type="${file##*.}"
+            echo "      (LABEL \"$label\" TYPE \"$type\" $(<"$file") )"
+            ;;
+    z*.bak|z*~)
+            ;;
+    z?*.?*)
+            ext="${file##*.}"
+            relurl="$(readlink -f "$file")"
+            relurl=${relurl#$startdir/}
+            test -z "$relurl" && error 'Unerwarteter Fehler in outputmenuentry_file => Bitte melden!'
+            echo "      (LABEL \"$label\" URL \"$relurl\" TYPE \"button\" HOTKEY \"$hotkey\" ACTION \"openExt\" EXT \"$ext\" )"
+            ;;
+    z*)     ;;
+  esac
+}
+
+# Gibt für jeden Verzeichniseintrag des aktuellen Verzeichnisses eine
+# Zeile aus, die dem entsprechenden Steuerelement (button, separator, senderbox,...)
+# entspricht
+# Aufrufparameter:
+#  $1: Überbleibsel aus vorheriger Version. Derzeit kein sinnvoller Zweck.
+outputmenuelements()
+{
+  local f
+  local dir="$1"
+  test -z "$dir" || dir="$dir/"
+  for f in * ; do
+    if test -d "$f" ; then
+      case "z$f" in
+        z*.multi) 
+                outputmenuentry_multi "${dir}$f" "$f"
+                ;;
+        z*)     
+                outputmenuentry_dir "${dir}$f" "$f"
+                ;;
+      esac
+    elif test -f "$f" ; then
+      outputmenuentry_file "${dir}$f" "$f"
+    fi
+  done
+}
+
+# Aufrufen in einem Verzeichnis für das eine Menübeschreibung ausgegeben werden soll.
+# Aufrufparameter:
+#  $1: Nicht verwendet.
+outputmenu()
+{
+    local dir="$(pwd)"
+    local menuname="$(make_id "$dir")"
+    echo "  $menuname("
+    echo "    Elemente("
+    outputmenuelements "$dir"
+    echo "    ) # Elemente"
+    echo "  ) # $menuname"
+    echo
+}
+
+# Aufrufen in einem Unterverzeichnis von ./vorlagen, dessen Layout ungefähr so aussieht:
+#   1.Standard/
+#   2.bürGermeister/  
+#   3.Bienchen/  
+#   4.eXtras/  
+#   X.insertFrag/
+#   X.buttons/
+# Es wird ein Abschnitt Menues(...) ausgegeben, der für alle Verzeichnisse, Unterverzeichnisse,
+# Unterunterverzeichnisse,... (außer denen, die ?.buttons, ?.insertFrag oder *.multi heißen) eine
+# Menuebeschreibung enthält.
+outputallmenus()
+{
+  local dir
+  echo "Menues("
+    find . -follow \( -path "*/.*" -prune \) -o \( -type d -not -name "." -not -name "?.buttons" -not -name "?.insertFrag" -not -name "*.multi" -print \) |
+    (
+      while read -r dir; do
+        (
+          cd "$dir" || error "Fehler beim Wechseln nach Verzeichnis $dir"
+          outputmenu "$dir"
+        )
+      done 
+    )
+
+  echo ") # Menues"
+}
+
+# Aufrufen in einem Unterverzeichnis von ./vorlagen, dessen Layout ungefähr so aussieht:
+#   1.Standard/
+#   2.eXtras/  
+#   X.insertFrag/
+#   X.buttons/
+# Es wird ein Abschnitt Symbolleisten(Briefkopfleiste(...)) ausgegeben, der für alle Verzeichnisse
+# mit Namen ?.buttons (auch auf tieferen Ebenen im Verzeichnisbaum)
+# eine Beschreibung der Eingabeelement enthält.
+outputallbuttons()
+{
+  local dir
+  echo "Symbolleisten("
+  echo "  Briefkopfleiste("
+    find . -follow \( -path "*/.*" -prune \) -o \( -type d -name "?.buttons" -print \) |
+    (
+      while read -r dir; do
+        (
+          cd "$dir" || error "Fehler beim Wechseln nach Verzeichnis $dir"
+          outputmenuelements "$dir"
+        )
+      done 
+    )
+  echo "  ) # Briefkopfleiste"
+  echo ") # Symbolleisten"
+}
+
+# Aufrufen in einem Unterverzeichnis von ./vorlagen, dessen Layout ungefähr so aussieht:
+#   1.Standard/
+#   2.eXtras/  
+#   X.insertFrag/
+#   X.buttons/
+# Es wird ein Abschnitt Menueleiste(...) ausgegeben, der für alle Verzeichnisse und Dateien außer
+# ?.insertFrag und ?.buttons einen Eintrag enthält.
+outputmainmenu()
+{
+  echo "Menueleiste("
+  outputmenuelements ""
+  echo ") # Menueleiste"
+}
+
+# Aufrufen in einem Unterverzeichnis von ./vorlagen, dessen Layout ungefähr so aussieht:
+#   1.Standard/
+#   2.bürGermeister/  
+#   3.Bienchen/  
+#   4.eXtras/  
+#   X.insertFrag/
+#   X.buttons/
+# Für die Vorlagen aus dem Verzeichnis ?.insertFrag werden Fragmente erstellt, deren Namen direkt
+# den Dateinamen entsprechen (nicht durch make_id erzeugt). Es wird kein Menüeintrag erstellt. 
+# In das Verzeichnis
+# ?.insertFrag kommen also Fragmente, die nur für insertFrag da sind und nicht zum direkten Aufruf.
+#
+# Das Verzeichnis ?.buttons enthält die Beschreibung der Button-Leiste, in Form von kleinen Dateien,
+# wobei
+#  - der Dateiname das LABEL angibt
+#  - die Erweiterung den TYPE angibt
+#  - der Inhalt zusätzliche Attribute enthalten kann
+#
+# Aufrufparameter
+#   $1: urlprefix
+output_wollmuxbar_conf()
+{
+  urlprefix="$1" #NICHT local
+  echo 1>&2 "  Menüleiste..."
+  outputmainmenu
+  echo 1>&2 "  Buttons..."
+  outputallbuttons
+  echo 1>&2 "  Menüs..."
+  outputallmenus
+  echo 1>&2 "  Fragmente..."
+  outputallfrags
+}
+
+# Aufrufen im Verzeichnis, das die Unterverzeichnisse conf/ und vorlagen/ enthält
+# Erstellt die Dateien ./conf/wollmuxbar_<gruppe>.conf
+# wobei als <gruppe> Verzeichnisse unterhalb von ./vorlagen genommen werden, die
+# nicht "fragmente" heissen.
+outputall_wollmuxbar_conf()
+{
+  local topdir="$(pwd)"
+  local dir
+  find ./vorlagen -maxdepth 1 -type d -not -path "./vorlagen" -not -path "./vorlagen/.*" -not -name "fragmente" -print |
+  (
+    while read -r dir; do
+      (
+        cd "$dir" || error "Fehler beim Wechseln nach Verzeichnis $dir"
+        local gruppe="${dir##./vorlagen/}"
+        echo 1>&2 "Erstelle Konfiguration für Gruppe ${gruppe}..."
+        output_wollmuxbar_conf "$dir" >"${topdir}/conf/wollmuxbar_${gruppe}.conf"
+        if test -e "${topdir}/conf/referat_${gruppe}.conf" ; then
+          echo >>"${topdir}/conf/wollmuxbar_${gruppe}.conf"
+          echo "%include \"referat_${gruppe}.conf\"" >>"${topdir}/conf/wollmuxbar_${gruppe}.conf"
+        fi
+      )
+    done 
+  )
+}
+
+# Überprüft ob ein Link in einen gegebenen Verzeichnisbaum zeigt und ändert ihn
+# optional in einen relativen Link
+# Argumente:
+#  $1: --fix oder --testonly   (--fix macht den Link relativ, --testonly testet ihn nur)
+#  $2: Wurzel des Verzeichnisbaums in den der Link zeigen muss. MUSS mit / beginnen!!!!
+#  $3: Link-Datei (diese wird geändert im --fix Falle). MUSS mit / beginnen!!!!! MUSS im Baum $2 liegen.
+#  $4: Linkziel (dies wird darauf getestet, dass es in $2 liegt)
+fixlink()
+{
+  local cmd="$1"
+  local topdir="$2"
+  local linkfile="$3"
+  local linktarget="$4"
+  case "z$linktarget" in
+    z/*) ;;
+    z*) linktarget="${linkfile%/*}/${linktarget}"
+  esac
+
+  # $linktarget ist jetzt ein absoluter Pfad
+
+  test -e "$linktarget" || { echo 1>&2 "Ziel von $linkfile existiert nicht!" ; return 1; }
+  local inum="$(find "$linktarget" -maxdepth 0 -printf "%i")"
+  
+  local reltarget="$(cd "$topdir" && find . -inum "$inum" -print | head -n 1)"
+  test "$topdir/$reltarget" -ef "$linktarget" || { echo 1>&2 "${linkfile} verweist auf Datei außerhalb von ${topdir}" ; return 1; }
+  
+  test "$cmd" = "--fix" || return 0
+  
+  local ptt=""
+  local lf="${linkfile%/*}"
+  while true ; do
+    test "$lf" = "" && error "Fehler 08/15! Bitte Skriptautor benachrichtigen!"  #$linkfile darf nicht außerhalb von $topdir liegen
+    test "$lf" -ef "$topdir" && break
+    ptt="../$ptt"
+    lf="${lf%/*}"
+  done
+  
+  rm "$linkfile" || error "Kann $linkfile nicht löschen!"
+  ln -s "${ptt}${reltarget#./}" "$linkfile"
+  echo 1>&2 "Korrigierter Link: $linkfile"
+}
+
+fixalllinks()
+{
+  local topdir="$(pwd)/vorlagen"
+  local linkfile
+  find ./vorlagen -type l -not -path "*/.*" -print |
+  (
+    while read -r linkfile; do
+      (
+        linkfile="$topdir/${linkfile#./vorlagen/}"
+        linktarget="$(find "$linkfile" -maxdepth 0 -printf "%l")"
+        case "z${linktarget}" in
+          z/*) fixlink --fix "$topdir" "$linkfile" "$linktarget"
+               ;;
+          z*)  fixlink --testonly "$topdir" "$linkfile" "$linktarget" 
+               ;;
+        esac
+      )
+    done 
+  )
+}
+
+if [ "$cmd" = "--all" ]; then
+  fixalllinks
+  outputall_wollmuxbar_conf
+elif [ "$cmd" = "--fixlinks" ] ; then
+  fixalllinks
+elif [ "$cmd" = "--wollmuxbar" ] ; then
+  outputall_wollmuxbar_conf
+else
+  error "Unbekanntes Kommando '$cmd'"
+fi

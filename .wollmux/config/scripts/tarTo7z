@@ -1,0 +1,37 @@
+#!/bin/bash
+
+#set -x
+
+error()
+{
+  echo 1>&2 "$@"
+  exit 1
+}
+
+if [ $# != 1 ]; then
+  error "USAGE: ${0##*/} <targz>"
+fi
+
+tarfile="$1"
+destfile="${tarfile%.tar.gz}.7z"
+currentdir=$(pwd)
+
+test -e "$destfile" && error "Datei existiert bereits: $destfile"
+
+if [ "z${tarfile#/}" = "z${tarfile}" ]; then
+  tarfile="$currentdir/$tarfile"
+fi
+
+test -e "$tarfile" || error "Datei existiert nicht: $tarfile"
+
+temp="/tmp/tarTo7z-$$-$RANDOM"
+while ! mkdir -m u=rwx,go=  "$temp" ; do
+  temp="/tmp/tarTo7z-$$-$RANDOM"
+done
+
+cd "$temp" || error
+
+tar xzpf "$tarfile" || error
+
+7z a -l "$destfile" $(find -maxdepth 1 -type d -not -name "." -print) >/dev/null || error
+mv "$destfile" "$currentdir/"
