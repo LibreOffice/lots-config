@@ -13,6 +13,9 @@ DESTDIR=configuration/config
 tarballname="wollmux-config-${VERSION}"
 tarball="${tarballname}.tar.gz"
 zipball="wollmux-config-${VERSION}.7z"
+
+rm -f ${tarball} ${zipball}
+
 echo 'Build tar'
 tar --owner=0 --group=0 -czf "${tarball}" .wollmux
 echo 'Build 7z'
