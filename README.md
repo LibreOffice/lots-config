@@ -3,7 +3,7 @@
 Example configuration of wollmux.
 
 ## Usage
-Download one of the releases and extract it in your home directory.
+Download one of the releases (.tar.gz or .7z file) and extract it in your home directory.
 
 ## Build new release
 * Do your changes in directory "configuration".
