@@ -33,5 +33,5 @@ cd "$temp" || error
 
 tar xzpf "$tarfile" || error
 
-7z a -l "$destfile" $(find -maxdepth 1 -type d -not -name "." -print) >/dev/null || error
+7z a "$destfile" $(find -maxdepth 1 -type d -not -name "." -print) >/dev/null || error
 mv "$destfile" "$currentdir/"
