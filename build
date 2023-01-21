@@ -14,7 +14,12 @@ tarballname="wollmux-config-${VERSION}"
 tarball="${tarballname}.tar.gz"
 zipball="wollmux-config-${VERSION}.7z"
 
-rm -f ${tarball} ${zipball}
+rm -f ${tarball} ${zipball} .wollmux/config/plugins/classes.jar .wollmux/config/plugins/*.class
+javac -verbose .wollmux/config/plugins/de/muenchen/allg/itd51/wollmux/func/*.java
+javac -verbose .wollmux/config/plugins/de/muenchen/allg/d101/*.java
+(cd .wollmux/config/plugins && jar cvf ./classes.jar \
+	de/muenchen/allg/itd51/wollmux/func/*.class \
+	de/muenchen/allg/d101/*.class )
 
 echo 'Build tar'
 tar --owner=0 --group=0 -czf "${tarball}" .wollmux
