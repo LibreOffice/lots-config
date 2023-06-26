@@ -61,35 +61,35 @@ outputfrag()
   echo "  (FRAG_ID \"${id}\" URL \"${urlprefix}/${relpath}\")"
 }
 
- # Textfragmente produzieren fuer alle Dateien mit erlaubter Erweiterung im Verzeichnis und allen
+ # TextFragments produzieren fuer alle Dateien mit erlaubter Erweiterung im Verzeichnis und allen
  # Unter-, Unterunter-,... verzeichnissen.
 outputallfrags()
 {
   local relpath
   local id
-  echo "Textfragmente("
+  echo "TextFragments("
 
   find . -follow \( -path "*/.*" -prune \) -o \( -type f -print \) |
   (
     while read -r relpath; do
       case "z$relpath" in
-        z*.odt|z*.ott|z*.doc|z*.dot|z*.xls|z*.ods|z*.ppt|z*.pot|z*.otp|z*.odp|z*.ots|z*.xlt|z*.odg|z*.otg|z*.odf|z*.odb|z*.odm) 
+        z*.odt|z*.ott|z*.doc|z*.dot|z*.xls|z*.ods|z*.ppt|z*.pot|z*.otp|z*.odp|z*.ots|z*.xlt|z*.odg|z*.otg|z*.odf|z*.odb|z*.odm)
                 case "z$relpath" in
-                  */?.insertFrag/*) 
+                  */?.insertFrag/*)
                       id="${relpath##*/}"
                       id="${id%.*}"
                       outputfrag "$relpath" "$id"
                       ;;
                   z*) outputfrag "$relpath"
                       ;;
-                esac      
+                esac
                 ;;
         z*)     ;;
       esac
-    done 
+    done
   ) | sort -t '"' --key=2,2 -u # doppelte FRAG_IDs entfernen
 
-  echo ") # Textfragmente"
+  echo ") # TextFragments"
   echo
 }
 
@@ -119,7 +119,7 @@ make_hotkey()
 make_label()
 {
   local label=""
-  
+
   if [ $(echo $1 | grep -c "$HKCHAR\w") -ne 0 ]; then
     # Entfernt den Hotkeymarker
   	label="$(echo "$1" | sed "s/$HKCHAR\(\\w\)/\1/g")"
@@ -202,7 +202,7 @@ outputmenuentry_multi()
 outputmenuentry_dir()
 {
   local dir="$2"
-  
+
   case "$dir" in
     ?.insertFrag) return 0;;
     ?.buttons) return 0;;
@@ -212,8 +212,8 @@ outputmenuentry_dir()
   name="${name%.*}"
   local hotkey="$(make_hotkey "$name")"
   local label="$(make_label "$name")"
-  local id="$(make_id "$dir")"  
-  
+  local id="$(make_id "$dir")"
+
   echo "      (LABEL \"$label\" TYPE \"menu\" MENU \"$id\" HOTKEY \"$hotkey\")"
 }
 
@@ -224,7 +224,7 @@ outputmenuentry_dir()
 outputmenuentry_file()
 {
   local file="$2"
-  
+
   local name="$(remove_sort_prefix "$file")"
   name="${name%.*}"
   local hotkey="$(make_hotkey "$name")"
@@ -233,15 +233,15 @@ outputmenuentry_file()
   local type
   local ext
   local relurl
-  
+
   case "z$file" in
     z*.ott|z*.dot|z*.pot|z*.otp|z*.ots|z*.xlt|z*.otg)
             echo "      (LABEL \"$label\" FRAG_ID \"$id\" HOTKEY \"$hotkey\" ACTION \"openTemplate\" TYPE \"button\" )"
             ;;
-    z*.odt|z*.doc|z*.xls|z*.ods|z*.ppt|z*.odp|z*.odg|z*.odb|z*.odf|z*.odm) 
+    z*.odt|z*.doc|z*.xls|z*.ods|z*.ppt|z*.odp|z*.odg|z*.odb|z*.odf|z*.odm)
             echo "      (LABEL \"$label\" FRAG_ID \"$id\" HOTKEY \"$hotkey\" ACTION \"openDocument\" TYPE \"button\" )"
             ;;
-    z*.button|z*.senderbox|z*.separator|z*.glue|z*.searchbox) 
+    z*.button|z*.senderbox|z*.separator|z*.glue|z*.searchbox)
             type="${file##*.}"
             echo "      (LABEL \"$label\" TYPE \"$type\" $(<"$file") )"
             ;;
@@ -271,10 +271,10 @@ outputmenuelements()
   for f in * ; do
     if test -d "$f" ; then
       case "z$f" in
-        z*.multi) 
+        z*.multi)
                 outputmenuentry_multi "${dir}$f" "$f"
                 ;;
-        z*)     
+        z*)
                 outputmenuentry_dir "${dir}$f" "$f"
                 ;;
       esac
@@ -301,18 +301,18 @@ outputmenu()
 
 # Aufrufen in einem Unterverzeichnis von ./vorlagen, dessen Layout ungefähr so aussieht:
 #   1.Standard/
-#   2.bürGermeister/  
-#   3.Bienchen/  
-#   4.eXtras/  
+#   2.bürGermeister/
+#   3.Bienchen/
+#   4.eXtras/
 #   X.insertFrag/
 #   X.buttons/
-# Es wird ein Abschnitt Menues(...) ausgegeben, der für alle Verzeichnisse, Unterverzeichnisse,
+# Es wird ein Abschnitt Menus(...) ausgegeben, der für alle Verzeichnisse, Unterverzeichnisse,
 # Unterunterverzeichnisse,... (außer denen, die ?.buttons, ?.insertFrag oder *.multi heißen) eine
 # Menuebeschreibung enthält.
 outputallmenus()
 {
   local dir
-  echo "Menues("
+  echo "Menus("
     find . -follow \( -path "*/.*" -prune \) -o \( -type d -not -name "." -not -name "?.buttons" -not -name "?.insertFrag" -not -name "*.multi" -print \) |
     (
       while read -r dir; do
@@ -320,25 +320,25 @@ outputallmenus()
           cd "$dir" || error "Fehler beim Wechseln nach Verzeichnis $dir"
           outputmenu "$dir"
         )
-      done 
+      done
     )
 
-  echo ") # Menues"
+  echo ") # Menus"
 }
 
 # Aufrufen in einem Unterverzeichnis von ./vorlagen, dessen Layout ungefähr so aussieht:
 #   1.Standard/
-#   2.eXtras/  
+#   2.eXtras/
 #   X.insertFrag/
 #   X.buttons/
-# Es wird ein Abschnitt Symbolleisten(Briefkopfleiste(...)) ausgegeben, der für alle Verzeichnisse
+# Es wird ein Abschnitt Toolbars(LetterheadToolbar(...)) ausgegeben, der für alle Verzeichnisse
 # mit Namen ?.buttons (auch auf tieferen Ebenen im Verzeichnisbaum)
 # eine Beschreibung der Eingabeelement enthält.
 outputallbuttons()
 {
   local dir
-  echo "Symbolleisten("
-  echo "  Briefkopfleiste("
+  echo "Toolbars("
+  echo "  LetterheadToolbar("
     find . -follow \( -path "*/.*" -prune \) -o \( -type d -name "?.buttons" -print \) |
     (
       while read -r dir; do
@@ -346,35 +346,35 @@ outputallbuttons()
           cd "$dir" || error "Fehler beim Wechseln nach Verzeichnis $dir"
           outputmenuelements "$dir"
         )
-      done 
+      done
     )
-  echo "  ) # Briefkopfleiste"
-  echo ") # Symbolleisten"
+  echo "  ) # LetterheadToolbar"
+  echo ") # Toolbars"
 }
 
 # Aufrufen in einem Unterverzeichnis von ./vorlagen, dessen Layout ungefähr so aussieht:
 #   1.Standard/
-#   2.eXtras/  
+#   2.eXtras/
 #   X.insertFrag/
 #   X.buttons/
-# Es wird ein Abschnitt Menueleiste(...) ausgegeben, der für alle Verzeichnisse und Dateien außer
+# Es wird ein Abschnitt Menubar(...) ausgegeben, der für alle Verzeichnisse und Dateien außer
 # ?.insertFrag und ?.buttons einen Eintrag enthält.
 outputmainmenu()
 {
-  echo "Menueleiste("
+  echo "Menubar("
   outputmenuelements ""
-  echo ") # Menueleiste"
+  echo ") # Menubar"
 }
 
 # Aufrufen in einem Unterverzeichnis von ./vorlagen, dessen Layout ungefähr so aussieht:
 #   1.Standard/
-#   2.bürGermeister/  
-#   3.Bienchen/  
-#   4.eXtras/  
+#   2.bürGermeister/
+#   3.Bienchen/
+#   4.eXtras/
 #   X.insertFrag/
 #   X.buttons/
 # Für die Vorlagen aus dem Verzeichnis ?.insertFrag werden Fragmente erstellt, deren Namen direkt
-# den Dateinamen entsprechen (nicht durch make_id erzeugt). Es wird kein Menüeintrag erstellt. 
+# den Dateinamen entsprechen (nicht durch make_id erzeugt). Es wird kein Menüeintrag erstellt.
 # In das Verzeichnis
 # ?.insertFrag kommen also Fragmente, die nur für insertFrag da sind und nicht zum direkten Aufruf.
 #
@@ -420,7 +420,7 @@ outputall_wollmuxbar_conf()
           echo "%include \"referat_${gruppe}.conf\"" >>"${topdir}/conf/wollmuxbar_${gruppe}.conf"
         fi
       )
-    done 
+    done
   )
 }
 
@@ -446,12 +446,12 @@ fixlink()
 
   test -e "$linktarget" || { echo 1>&2 "Ziel von $linkfile existiert nicht!" ; return 1; }
   local inum="$(find "$linktarget" -maxdepth 0 -printf "%i")"
-  
+
   local reltarget="$(cd "$topdir" && find . -inum "$inum" -print | head -n 1)"
   test "$topdir/$reltarget" -ef "$linktarget" || { echo 1>&2 "${linkfile} verweist auf Datei außerhalb von ${topdir}" ; return 1; }
-  
+
   test "$cmd" = "--fix" || return 0
-  
+
   local ptt=""
   local lf="${linkfile%/*}"
   while true ; do
@@ -460,7 +460,7 @@ fixlink()
     ptt="../$ptt"
     lf="${lf%/*}"
   done
-  
+
   rm "$linkfile" || error "Kann $linkfile nicht löschen!"
   ln -s "${ptt}${reltarget#./}" "$linkfile"
   echo 1>&2 "Korrigierter Link: $linkfile"
@@ -479,11 +479,11 @@ fixalllinks()
         case "z${linktarget}" in
           z/*) fixlink --fix "$topdir" "$linkfile" "$linktarget"
                ;;
-          z*)  fixlink --testonly "$topdir" "$linkfile" "$linktarget" 
+          z*)  fixlink --testonly "$topdir" "$linkfile" "$linktarget"
                ;;
         esac
       )
-    done 
+    done
   )
 }
 
