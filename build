@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#set -x 
+#set -x
 
 if [ $# -ne 1 ]; then
   echo 1>&2 "Usage: build <version>"
@@ -10,18 +10,18 @@ fi
 VERSION=$1
 DESTDIR=configuration/config
 
-tarballname="wollmux-config-${VERSION}"
+tarballname="lots-config-${VERSION}"
 tarball="${tarballname}.tar.gz"
-zipball="wollmux-config-${VERSION}.7z"
+zipball="lots-config-${VERSION}.7z"
 
-rm -f ${tarball} ${zipball} .wollmux/config/plugins/classes.jar .wollmux/config/plugins/*.class
-javac --release 8 -verbose .wollmux/config/plugins/de/muenchen/allg/itd51/wollmux/func/*.java
-javac --release 8 -verbose .wollmux/config/plugins/de/muenchen/allg/d101/*.java
-(cd .wollmux/config/plugins && jar cvf ./classes.jar \
+rm -f ${tarball} ${zipball} .lots/config/plugins/classes.jar .lots/config/plugins/*.class
+javac --release 8 -verbose .lots/config/plugins/de/muenchen/allg/itd51/wollmux/func/*.java
+javac --release 8 -verbose .lots/config/plugins/de/muenchen/allg/d101/*.java
+(cd .lots/config/plugins && jar cvf ./classes.jar \
 	de/muenchen/allg/itd51/wollmux/func/*.class \
 	de/muenchen/allg/d101/*.class )
 
 echo 'Build tar'
-tar --owner=0 --group=0 -czf "${tarball}" .wollmux
+tar --owner=0 --group=0 -czf "${tarball}" .lots
 echo 'Build 7z'
 ${DESTDIR}/scripts/tarTo7z "${tarball}"
