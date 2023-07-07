@@ -7,6 +7,7 @@ Download one of the [releases](https://github.com/LibreOffice/lots-config/releas
 
 ## Build new release
 * Do your changes in directory "configuration".
+* Update version number in `.wollmux/config/conf/version.conf`
 * call `./build <version>`
 
 A tar and 7z file are generated in the main direcotry.
